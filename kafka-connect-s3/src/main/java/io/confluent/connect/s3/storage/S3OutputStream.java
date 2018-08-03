@@ -271,4 +271,8 @@ public class S3OutputStream extends OutputStream {
       log.debug("Progress event: " + progressEvent);
     }
   }
+
+  public String getKey() {
+    return this.key;
+  }
 }

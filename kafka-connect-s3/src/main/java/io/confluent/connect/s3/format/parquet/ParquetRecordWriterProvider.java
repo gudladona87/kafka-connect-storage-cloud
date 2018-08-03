@@ -19,7 +19,6 @@ import io.confluent.connect.s3.S3SinkConnectorConfig;
 import io.confluent.connect.s3.storage.S3OutputStream;
 import io.confluent.connect.s3.storage.S3Storage;
 import org.apache.avro.generic.GenericRecord;
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
@@ -31,7 +30,9 @@ import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
 
 public class ParquetRecordWriterProvider
     implements io.confluent.connect.storage.format.RecordWriterProvider<S3SinkConnectorConfig> {
@@ -97,6 +98,8 @@ public class ParquetRecordWriterProvider
 
       @Override
       public void close() {
+        log.info("Closing writer.");
+
         if (writer != null) {
           try {
             writer.close();
@@ -109,11 +112,18 @@ public class ParquetRecordWriterProvider
       @Override
       public void commit() {
         try {
-          // Flush is required here, because closing the writer will close the underlying S3
-          // output stream before committing any data to S3.
-          //writer.flush();
+          //close and copy the bytes to output stream.
           writer.close();
+          File f = new File(s3out.getKey());
+          long n = Files.copy(f.toPath(), s3out);
+          log.info("Copied {} bytes to S3", n);
+
+          // commit to S3 and delete the file.
           s3out.commit();
+          boolean isDeleted = f.delete();
+          if (!isDeleted) {
+            log.warn("File delete failed: {}", f.getAbsolutePath());
+          }
         } catch (IOException e) {
           throw new ConnectException(e);
         }
