@@ -24,7 +24,6 @@ import org.apache.kafka.connect.data.Schema;
 import org.apache.kafka.connect.errors.ConnectException;
 import org.apache.kafka.connect.sink.SinkRecord;
 import org.apache.parquet.avro.AvroParquetWriter;
-import org.apache.parquet.hadoop.ParquetFileWriter;
 import org.apache.parquet.hadoop.ParquetWriter;
 import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.slf4j.Logger;
@@ -58,8 +57,8 @@ public class ParquetRecordWriterProvider
   ) {
     return new io.confluent.connect.storage.format.RecordWriter() {
       final CompressionCodecName compressionCodecName = CompressionCodecName.SNAPPY;
-      final int blockSize = 1024;
-      final int pageSize = 1024;
+      final int blockSize = 256 * 1024 * 1024;
+      final int pageSize = 64 * 1024;
       final Path path = new Path(filename);
       Schema schema = null;
       ParquetWriter<GenericRecord> writer = null;
@@ -70,7 +69,6 @@ public class ParquetRecordWriterProvider
         if (schema == null) {
           schema = record.valueSchema();
           s3out = storage.create(filename, true);
-
           try {
             log.info("Opening record writer for: {}", filename);
             org.apache.avro.Schema avroSchema = avroData.fromConnectSchema(schema);
@@ -79,16 +77,14 @@ public class ParquetRecordWriterProvider
                 .withCompressionCodec(compressionCodecName)
                 .withPageSize(pageSize)
                 .withRowGroupSize(blockSize)
-                .withWriteMode(ParquetFileWriter.Mode.OVERWRITE)
                 .enableDictionaryEncoding().build();
           } catch (IOException e) {
             throw new ConnectException(e);
           }
         }
 
-        log.info("Sink record: {}", record.toString());
+        log.trace("Sink record: {}", record.toString());
         Object value = avroData.fromConnectData(record.valueSchema(), record.value());
-        log.info("Writing value: {}", value);
         try {
           writer.write((GenericRecord) value);
         } catch (IOException e) {
@@ -98,8 +94,6 @@ public class ParquetRecordWriterProvider
 
       @Override
       public void close() {
-        log.info("Closing writer.");
-
         if (writer != null) {
           try {
             writer.close();
